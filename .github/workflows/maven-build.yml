@@ -1,0 +1,22 @@
+name: Sample Build
+
+on: [push]
+
+jobs:
+  item-1:
+    runs-on: ubuntu-latest
+    name: A job to test
+    steps:
+    - name: Checkout Actions
+      uses: actions/checkout@v1
+
+    - name: Checkout pentaho/maven-parent-poms
+      uses: actions/checkout@v1
+      with:
+        repository: pentaho/maven-parent-poms
+        ref: master
+
+    - name: Build
+      uses: ./maven # local action
+      with:
+        args: -v
