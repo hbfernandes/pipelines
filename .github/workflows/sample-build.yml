@@ -1,0 +1,121 @@
+name: Sample Workflow
+on: [push]
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+jobs:
+  coding-standards:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v1
+      with:
+        repository: pentaho/pentaho-coding-standards
+        ref: master
+        path: pipelines
+    - name: Cache
+      uses: actions/cache@v1
+      with:
+        path: .m2/repository
+        key: ${{ hashFiles('**/pom.xml') }}
+    - name: Build
+      uses: hbfernandes/actions/maven@master
+      with:
+        args: package
+
+  parent-poms:
+    needs: [coding-standards]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v1
+      with:
+        repository: pentaho/maven-parent-poms
+        ref: master
+        path: pipelines
+    - name: Cache
+      uses: actions/cache@v1
+      with:
+        path: .m2/repository
+        key: ${{ hashFiles('**/pom.xml') }}
+    - name: Build
+      uses: hbfernandes/actions/maven@master
+      with:
+        args: package
+
+  apache-vfs-browser:
+    needs: [parent-poms]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v1
+      with:
+        repository: pentaho/apache-vfs-browser
+        ref: master
+        path: pipelines
+    - name: Cache
+      uses: actions/cache@v1
+      with:
+        path: .m2/repository
+        key: ${{ hashFiles('**/pom.xml') }}
+    - name: Build
+      uses: hbfernandes/actions/maven@master
+      with:
+        args: package -Daudit
+    - name: Sonar
+      uses: hbfernandes/actions/maven@master
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      with:
+        args: org.sonarsource.scanner.maven:sonar-maven-plugin:3.7.0.1746:sonar
+
+  application-launcher:
+    needs: [parent-poms]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v1
+      with:
+        repository: pentaho/pentaho-application-launcher
+        ref: master
+        path: pipelines
+    - name: Cache
+      uses: actions/cache@v1
+      with:
+        path: .m2/repository
+        key: ${{ hashFiles('**/pom.xml') }}
+    - name: Build
+      uses: hbfernandes/actions/maven@master
+      with:
+        args: package -Daudit
+    - name: Sonar
+      uses: hbfernandes/actions/maven@master
+      with:
+        args: sonar:sonar -Dsonar.branch.name=master
+
+  osgi-bundles:
+    needs: [application-launcher, apache-vfs-browser]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v1
+      with:
+        repository: pentaho/pentaho-osgi-bundles
+        ref: master
+        path: pipelines
+    - name: Cache
+      uses: actions/cache@v1
+      with:
+        path: .m2/repository
+        key: ${{ hashFiles('**/pom.xml') }}
+    - name: Build
+      uses: hbfernandes/actions/maven@master
+      with:
+        args: package -Daudit
+    - name: Sonar
+      uses: hbfernandes/actions/maven@master
+      with:
+        args: sonar:sonar
+
