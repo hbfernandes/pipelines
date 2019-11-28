@@ -69,7 +69,7 @@ jobs:
       env:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       with:
-        args: org.sonarsource.scanner.maven:sonar-maven-plugin:3.7.0.1746:sonar
+        args: org.sonarsource.scanner.maven:sonar-maven-plugin:3.7.0.1746:sonar -Dsonar.branch.name=master -Dsonar.branch.target=master
 
   application-launcher:
     needs: [parent-poms]
