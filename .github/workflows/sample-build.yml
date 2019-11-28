@@ -1,5 +1,5 @@
 name: Sample Workflow
-on: [push]
+on: push
 
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -19,7 +19,7 @@ jobs:
       uses: actions/cache@v1
       with:
         path: .m2/repository
-        key: ${{ hashFiles('**/pom.xml') }}
+        key: mvn-${{ hashFiles('**/pom.xml') }}
     - name: Build
       uses: hbfernandes/actions/maven@master
       with:
@@ -39,7 +39,7 @@ jobs:
       uses: actions/cache@v1
       with:
         path: .m2/repository
-        key: ${{ hashFiles('**/pom.xml') }}
+        key: mvn-${{ hashFiles('**/pom.xml') }}
     - name: Build
       uses: hbfernandes/actions/maven@master
       with:
@@ -59,17 +59,15 @@ jobs:
       uses: actions/cache@v1
       with:
         path: .m2/repository
-        key: ${{ hashFiles('**/pom.xml') }}
+        key: mvn-${{ hashFiles('**/pom.xml') }}
     - name: Build
       uses: hbfernandes/actions/maven@master
       with:
         args: package -Daudit
     - name: Sonar
       uses: hbfernandes/actions/maven@master
-      env:
-        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       with:
-        args: org.sonarsource.scanner.maven:sonar-maven-plugin:3.7.0.1746:sonar -Dsonar.branch.name=master -Dsonar.branch.target=master
+        args: sonar:sonar
 
   application-launcher:
     needs: [parent-poms]
@@ -85,7 +83,7 @@ jobs:
       uses: actions/cache@v1
       with:
         path: .m2/repository
-        key: ${{ hashFiles('**/pom.xml') }}
+        key: mvn-${{ hashFiles('**/pom.xml') }}
     - name: Build
       uses: hbfernandes/actions/maven@master
       with:
@@ -93,7 +91,7 @@ jobs:
     - name: Sonar
       uses: hbfernandes/actions/maven@master
       with:
-        args: sonar:sonar -Dsonar.branch.name=master
+        args: sonar:sonar
 
   osgi-bundles:
     needs: [application-launcher, apache-vfs-browser]
@@ -109,13 +107,8 @@ jobs:
       uses: actions/cache@v1
       with:
         path: .m2/repository
-        key: ${{ hashFiles('**/pom.xml') }}
+        key: mvn-${{ hashFiles('**/pom.xml') }}
     - name: Build
       uses: hbfernandes/actions/maven@master
       with:
-        args: package -Daudit
-    - name: Sonar
-      uses: hbfernandes/actions/maven@master
-      with:
-        args: sonar:sonar
-
+        args: package

@@ -1,0 +1,30 @@
+name: Sonar
+on: release
+    
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+jobs:
+  sonar:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v1
+      with:
+        repository: hbfernandes/my-app
+        ref: master
+        path: pipelines
+    - name: Cache
+      uses: actions/cache@v1
+      with:
+        path: .m2/repository
+        key: 1-${{ hashFiles('**/pom.xml') }}
+    - name: Build
+      uses: hbfernandes/actions/maven@master
+      with:
+        args: package
+    - name: Sonar
+      uses: hbfernandes/actions/maven@master
+      with:
+        args: sonar:sonar
