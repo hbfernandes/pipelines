@@ -1,12 +1,11 @@
-name: Sonar
+name: Packages
 on: release
     
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
 jobs:
-  sonar:
+  publish:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
@@ -19,12 +18,9 @@ jobs:
       uses: actions/cache@v1
       with:
         path: .m2/repository
-        key: 1-${{ hashFiles('**/pom.xml') }}
+        key: mvn-${{ hashFiles('**/pom.xml') }}
     - name: Build
       uses: hbfernandes/actions/maven@master
       with:
-        args: package
-    - name: Sonar
-      uses: hbfernandes/actions/maven@master
-      with:
-        args: sonar:sonar
+        args: deploy
+        
