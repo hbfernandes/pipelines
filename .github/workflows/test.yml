@@ -15,5 +15,9 @@ jobs:
       with:
         repository: hbfernandes/my-app
         ref: master
+    - name: Build
+      uses: hbfernandes/actions/maven@master
+      with:
+        args: clean
         
         
