@@ -10,4 +10,10 @@ jobs:
     steps:
     - run: pwd
     - run: whoami
+    - name: Checkout
+      uses: actions/checkout@v1
+      with:
+        repository: hbfernandes/my-app
+        ref: master
+        
         
