@@ -8,8 +8,8 @@ jobs:
   publish:
     runs-on: [self-hosted]
     steps:
-    - run: pwd
     - run: whoami
+    - run: pwd
     - name: Checkout
       uses: actions/checkout@v1
       with:
