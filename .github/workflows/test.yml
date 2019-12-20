@@ -17,7 +17,7 @@ jobs:
         ref: master
         path: pipelines
     - name: Build
-      uses: hbfernandes/actions/maven@master
+      uses: hbfernandes/actions/maven@published
       with:
         args: clean        
         
