@@ -1,0 +1,23 @@
+version: '3.7'
+
+networks:
+  actions:
+    name: actions
+    ipam:
+      driver: default
+      config:
+        - subnet: "10.1.0.0/16"
+        
+services:
+  runner:
+    image: pentaho/github-runner
+    build: 
+      context: runner
+    env_file:
+      - env
+    volumes:
+      - /workspace:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - actions
+      

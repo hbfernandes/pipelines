@@ -1,0 +1,2017 @@
+name: Suite Release Build
+on: repository_dispatch
+# on: release
+
+env:
+  MVN_CACHE_PATH: /workspace/mvn-cache
+  MVN_WORSPACE_PATH: ${{ github.workspace }}/project
+
+jobs:
+  coding-standards:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-coding-standards
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  parent-poms:
+    runs-on: self-hosted
+    needs: [coding-standards]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/maven-parent-poms
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  parent-poms-ee:
+    runs-on: self-hosted
+    needs: [parent-poms]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/maven-parent-poms-ee
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Dobfuscate-version-for-license-phase=none
+
+  archetypes:
+    runs-on: self-hosted
+    needs: [parent-poms-ee]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/maven-project-archetypes
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  metastore:
+    runs-on: self-hosted
+    needs: [parent-poms-ee]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/metastore
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  reporting-pom:
+    runs-on: self-hosted
+    needs: [parent-poms-ee]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-reporting
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -N
+
+  osgi-bundles-lowdeps:
+    runs-on: self-hosted
+    needs: [archetypes, metastore, reporting-pom]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-osgi-bundles
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -P lowdeps -DskipDefault
+
+  oss-license-assembly:
+    runs-on: self-hosted
+    needs: [archetypes, metastore, reporting-pom]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/oss-licenses
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  database-model:
+    runs-on: self-hosted
+    needs: [archetypes, metastore, reporting-pom]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-commons-database
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -pl .,model
+
+  mongo-utils:
+    runs-on: self-hosted
+    needs: [archetypes, metastore, reporting-pom]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-mongo-utils
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  eula-wrap-config:
+    runs-on: self-hosted
+    needs: [archetypes, metastore, reporting-pom]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-eula-wrap-config
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  reporting-libraries-lowdeps:
+    runs-on: self-hosted
+    needs: [archetypes, metastore, reporting-pom]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-reporting
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          path: libraries
+          args: clean install -Plowdeps -Djavadoc
+
+  reporting-engine-core:
+    runs-on: self-hosted
+    needs: [osgi-bundles-lowdeps, oss-license-assembly, database-model, mongo-utils, eula-wrap-config, reporting-libraries-lowdeps]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-reporting
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          path: engine
+          args: clean install -Pcore -Djavadoc
+
+  gwt-widgets:
+    runs-on: self-hosted
+    needs: [osgi-bundles-lowdeps, oss-license-assembly, database-model, mongo-utils, eula-wrap-config, reporting-libraries-lowdeps]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-commons-gwt-modules
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  connections:
+    runs-on: self-hosted
+    needs: [osgi-bundles-lowdeps, oss-license-assembly, database-model, mongo-utils, eula-wrap-config, reporting-libraries-lowdeps]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-connections
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  commons-json:
+    runs-on: self-hosted
+    needs: [osgi-bundles-lowdeps, oss-license-assembly, database-model, mongo-utils, eula-wrap-config, reporting-libraries-lowdeps]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-commons-json
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  application-launcher:
+    runs-on: self-hosted
+    needs: [osgi-bundles-lowdeps, oss-license-assembly, database-model, mongo-utils, eula-wrap-config, reporting-libraries-lowdeps]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-application-launcher
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  version-checker:
+    runs-on: self-hosted
+    needs: [osgi-bundles-lowdeps, oss-license-assembly, database-model, mongo-utils, eula-wrap-config, reporting-libraries-lowdeps]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-versionchecker
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  hdfs-vfs:
+    runs-on: self-hosted
+    needs: [osgi-bundles-lowdeps, oss-license-assembly, database-model, mongo-utils, eula-wrap-config, reporting-libraries-lowdeps]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-hdfs-vfs
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  s3-vfs:
+    runs-on: self-hosted
+    needs: [osgi-bundles-lowdeps, oss-license-assembly, database-model, mongo-utils, eula-wrap-config, reporting-libraries-lowdeps]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-s3-vfs
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  apache-vfs-browser:
+    runs-on: self-hosted
+    needs: [osgi-bundles-lowdeps, oss-license-assembly, database-model, mongo-utils, eula-wrap-config, reporting-libraries-lowdeps]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/apache-vfs-browser
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  xul:
+    runs-on: self-hosted
+    needs: [reporting-engine-core, gwt-widgets, connections, commons-json, application-launcher, version-checker, hdfs-vfs, s3-vfs, apache-vfs-browser]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-commons-xul
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  actionsequence-dom:
+    runs-on: self-hosted
+    needs: [reporting-engine-core, gwt-widgets, connections, commons-json, application-launcher, version-checker, hdfs-vfs, s3-vfs, apache-vfs-browser]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-actionsequence-dom
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  metadata-registry:
+    runs-on: self-hosted
+    needs: [xul, actionsequence-dom]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-registry
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  mondrian-jar:
+    runs-on: self-hosted
+    needs: [metadata-registry]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/mondrian
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -P !workbench -P !assemblies -Djavadoc
+
+  platform-api:
+    runs-on: self-hosted
+    needs: [metadata-registry]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-platform
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -DskipDefault -P platform-api -Djavadoc
+
+  pdi-engine-core:
+    runs-on: self-hosted
+    needs: [mondrian-jar, platform-api]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-kettle
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -DskipDefault -P base,plugins,lowdeps -Djavadoc
+
+  metadata:
+    runs-on: self-hosted
+    needs: [pdi-engine-core]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-metadata
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  database-gwt:
+    runs-on: self-hosted
+    needs: [metadata]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-commons-database
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -pl gwt
+
+  vertica-bulkloader:
+    runs-on: self-hosted
+    needs: [metadata]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-vertica-bulkloader
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  pdi-teradata-tpt-plugin:
+    runs-on: self-hosted
+    needs: [metadata]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pdi-teradata-tpt-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  chartbeans:
+    runs-on: self-hosted
+    needs: [metadata]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-chartbeans
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  license-ee:
+    runs-on: self-hosted
+    needs: [metadata]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-ee-license
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Dmaven.test.failure.ignore=true
+
+  pdi-dataservice-plugin:
+    runs-on: self-hosted
+    needs: [metadata]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pdi-dataservice-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  big-data-hadoop-shims-api:
+    runs-on: self-hosted
+    needs: [metadata]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-hadoop-shims
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -DskipDefault -P shim-api
+
+  archetypes-ee:
+    runs-on: self-hosted
+    needs: [database-gwt, vertica-bulkloader, pdi-teradata-tpt-plugin, chartbeans, license-ee, pdi-dataservice-plugin, big-data-hadoop-shims-api]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/maven-project-archetypes-ee
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  big-data-plugin-lowdeps:
+    runs-on: self-hosted
+    needs: [database-gwt, vertica-bulkloader, pdi-teradata-tpt-plugin, chartbeans, license-ee, pdi-dataservice-plugin, big-data-hadoop-shims-api]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/big-data-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -DskipDefault -P lowdeps
+
+  big-data-hadoop-shims-common:
+    runs-on: self-hosted
+    needs: [archetypes-ee, big-data-plugin-lowdeps]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-hadoop-shims
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -DskipDefault -P common
+
+  big-data-hadoop-shims:
+    runs-on: self-hosted
+    needs: [big-data-hadoop-shims-common]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-hadoop-shims
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          path: shims
+          args: clean install -DskipDefault -P all
+
+  big-data-splunk-plugin:
+    runs-on: self-hosted
+    needs: [big-data-hadoop-shims]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-splunk-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  big-data-mongodb-plugin:
+    runs-on: self-hosted
+    needs: [big-data-hadoop-shims]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-mongodb-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  big-data-cassandra-plugin:
+    runs-on: self-hosted
+    needs: [big-data-hadoop-shims]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-cassandra-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  mondrian-workbench:
+    runs-on: self-hosted
+    needs: [big-data-splunk-plugin, big-data-mongodb-plugin, big-data-cassandra-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/mondrian
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -P !mondrian -P !assemblies
+
+  mondrian-schema-workbench-plugins:
+    runs-on: self-hosted
+    needs: [mondrian-workbench]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-mondrianschemaworkbench-plugins
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  psw-assembly:
+    runs-on: self-hosted
+    needs: [mondrian-schema-workbench-plugins]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/mondrian
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -P !mondrian -P !workbench
+
+  psw-assembly-ee:
+    runs-on: self-hosted
+    needs: [psw-assembly]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-schema-workbench-ee
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Deula-wrap
+
+  reporting-engine-extensions:
+    runs-on: self-hosted
+    needs: [psw-assembly]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-reporting
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          path: engine
+          args: clean install -Pextensions -Djavadoc
+
+  reportwizard-core:
+    runs-on: self-hosted
+    needs: [psw-assembly-ee, reporting-engine-extensions]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-reportwizard-core
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  platform-base:
+    runs-on: self-hosted
+    needs: [reportwizard-core]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-platform
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -DskipDefault -P platform-base -Djavadoc
+
+  osgi-bundles-highdeps:
+    runs-on: self-hosted
+    needs: [platform-base]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-osgi-bundles
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -P highdeps -DskipDefault
+
+  mql-editor:
+    runs-on: self-hosted
+    needs: [platform-base]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/mql-editor
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  pdi-palo-plugin:
+    runs-on: self-hosted
+    needs: [platform-base]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pdi-palo-core
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  pdi-osgi-bridge:
+    runs-on: self-hosted
+    needs: [osgi-bundles-highdeps, mql-editor, pdi-palo-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pdi-osgi-bridge
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -P modules
+
+  metaverse-plugin:
+    runs-on: self-hosted
+    needs: [osgi-bundles-highdeps, mql-editor, pdi-palo-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-metaverse
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  pdi-core-plugins:
+    runs-on: self-hosted
+    needs: [pdi-osgi-bridge, metaverse-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-kettle
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          path: plugins
+          args: clean install -DskipDefault -P highdeps
+
+  pdi-monitoring-plugin:
+    runs-on: self-hosted
+    needs: [pdi-osgi-bridge, metaverse-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pdi-monitoring-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Deula-wrap
+
+  modeler:
+    runs-on: self-hosted
+    needs: [pdi-osgi-bridge, metaverse-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/modeler
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  cpf-plugin:
+    runs-on: self-hosted
+    needs: [pdi-osgi-bridge, metaverse-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: webdetails/cpf
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  ccc-plugin:
+    runs-on: self-hosted
+    needs: [pdi-osgi-bridge, metaverse-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: webdetails/ccc
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  commons-ee:
+    runs-on: self-hosted
+    needs: [pdi-osgi-bridge, metaverse-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/commons-ee
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  pdi-plugins-ee:
+    runs-on: self-hosted
+    needs: [pdi-core-plugins, pdi-monitoring-plugin, modeler, cpf-plugin, ccc-plugin, commons-ee]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pdi-plugins-ee
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  snowflake-plugin:
+    runs-on: self-hosted
+    needs: [pdi-core-plugins, pdi-monitoring-plugin, modeler, cpf-plugin, ccc-plugin, commons-ee]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pdi-plugins-ee
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          path: snowflake
+          args: clean install -Deula-wrap
+
+  camel-components:
+    runs-on: self-hosted
+    needs: [pdi-core-plugins, pdi-monitoring-plugin, modeler, cpf-plugin, ccc-plugin, commons-ee]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-camel-components
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  pdi-dataservice-server-plugin:
+    runs-on: self-hosted
+    needs: [pdi-core-plugins, pdi-monitoring-plugin, modeler, cpf-plugin, ccc-plugin, commons-ee]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pdi-dataservice-server-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  reporting-libraries-highdeps:
+    runs-on: self-hosted
+    needs: [pdi-core-plugins, pdi-monitoring-plugin, modeler, cpf-plugin, ccc-plugin, commons-ee]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-reporting
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          path: libraries
+          args: clean install -Phighdeps
+
+  pdi-platform-plugin:
+    runs-on: self-hosted
+    needs: [pdi-core-plugins, pdi-monitoring-plugin, modeler, cpf-plugin, ccc-plugin, commons-ee]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pdi-platform-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  pdi-platform-utils-plugin:
+    runs-on: self-hosted
+    needs: [pdi-core-plugins, pdi-monitoring-plugin, modeler, cpf-plugin, ccc-plugin, commons-ee]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pdi-platform-utils-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  platform-plugin-jpivot:
+    runs-on: self-hosted
+    needs: [pdi-core-plugins, pdi-monitoring-plugin, modeler, cpf-plugin, ccc-plugin, commons-ee]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-platform-plugin-jpivot
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  cdf-plugin:
+    runs-on: self-hosted
+    needs: [pdi-core-plugins, pdi-monitoring-plugin, modeler, cpf-plugin, ccc-plugin, commons-ee]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: webdetails/cdf
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  common-ui:
+    runs-on: self-hosted
+    needs: [pdi-plugins-ee, snowflake-plugin, camel-components, pdi-dataservice-server-plugin, reporting-libraries-highdeps, pdi-platform-plugin, pdi-platform-utils-plugin, platform-plugin-jpivot, cdf-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-platform-plugin-common-ui
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  data-access-plugin:
+    runs-on: self-hosted
+    needs: [common-ui]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/data-access
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  marketplace-plugin:
+    runs-on: self-hosted
+    needs: [common-ui]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/marketplace
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  platform-user-console:
+    runs-on: self-hosted
+    needs: [common-ui]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-platform
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -DskipDefault -P platform-user-console -Djavadoc
+
+  big-data-plugin-highdeps:
+    runs-on: self-hosted
+    needs: [common-ui]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/big-data-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -DskipDefault -P highdeps
+
+  pdi-data-refinery-plugin:
+    runs-on: self-hosted
+    needs: [common-ui]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-data-refinery
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  pdi-daemon:
+    runs-on: self-hosted
+    needs: [data-access-plugin, marketplace-plugin, platform-user-console, big-data-plugin-highdeps, pdi-data-refinery-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/adaptive-execution-layer
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  cde-plugin:
+    runs-on: self-hosted
+    needs: [data-access-plugin, marketplace-plugin, platform-user-console, big-data-plugin-highdeps, pdi-data-refinery-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: webdetails/cde
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  cpk-plugin:
+    runs-on: self-hosted
+    needs: [data-access-plugin, marketplace-plugin, platform-user-console, big-data-plugin-highdeps, pdi-data-refinery-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: webdetails/cpk
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  cgg-plugin:
+    runs-on: self-hosted
+    needs: [data-access-plugin, marketplace-plugin, platform-user-console, big-data-plugin-highdeps, pdi-data-refinery-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: webdetails/cgg
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  sparkl-plugin:
+    runs-on: self-hosted
+    needs: [pdi-daemon, cde-plugin, cpk-plugin, cgg-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: webdetails/sparkl
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  platform-reporting-plugin:
+    runs-on: self-hosted
+    needs: [pdi-daemon, cde-plugin, cpk-plugin, cgg-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-platform-plugin-reporting
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  big-data-hadoop-shims-ee:
+    runs-on: self-hosted
+    needs: [sparkl-plugin, platform-reporting-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-big-data-ee
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -DskipDefault -P base,all -Deula-wrap
+
+  cda-plugin:
+    runs-on: self-hosted
+    needs: [sparkl-plugin, platform-reporting-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: webdetails/cda
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  jdbc-distribution-utility:
+    runs-on: self-hosted
+    needs: [big-data-hadoop-shims-ee, cda-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/jdbc-distribution-utility
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  dashboards-chart-editor-plugin:
+    runs-on: self-hosted
+    needs: [big-data-hadoop-shims-ee, cda-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-dashboard-chart-editor
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  platform-ee:
+    runs-on: self-hosted
+    needs: [jdbc-distribution-utility, dashboards-chart-editor-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-platform-ee
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -DskipDefault -P platform-ee
+
+  geo-plugin:
+    runs-on: self-hosted
+    needs: [platform-ee]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-platform-plugin-geo
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Deula-wrap
+
+  analyzer-plugin:
+    runs-on: self-hosted
+    needs: [geo-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-analyzer
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Dagilebi -Deula-wrap
+
+  platform-chart-plugin-ee:
+    runs-on: self-hosted
+    needs: [analyzer-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-ee-chart-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  analysis-plugin-ee:
+    runs-on: self-hosted
+    needs: [analyzer-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-analysis-ee
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Deula-wrap
+
+  pdi-yarn-plugin:
+    runs-on: self-hosted
+    needs: [analyzer-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-yarn-kettle-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  data-exploration:
+    runs-on: self-hosted
+    needs: [analyzer-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-det
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Dmaven.test.failure.ignore=true
+
+  big-data-plugin-features:
+    runs-on: self-hosted
+    needs: [analyzer-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/big-data-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          path: assemblies
+          args: clean install -DskipDefault -DfeaturesOnly
+
+  data-exploration-ee:
+    runs-on: self-hosted
+    needs: [platform-chart-plugin-ee, analysis-plugin-ee, pdi-yarn-plugin, data-exploration, big-data-plugin-features]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-det-ee
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  karaf-assembly:
+    runs-on: self-hosted
+    needs: [platform-chart-plugin-ee, analysis-plugin-ee, pdi-yarn-plugin, data-exploration, big-data-plugin-features]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-karaf-assembly
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  dashboards-plugin:
+    runs-on: self-hosted
+    needs: [platform-chart-plugin-ee, analysis-plugin-ee, pdi-yarn-plugin, data-exploration, big-data-plugin-features]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-platform-plugin-dashboards
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Deula-wrap
+
+  pdi-weka-plugins:
+    runs-on: self-hosted
+    needs: [platform-chart-plugin-ee, analysis-plugin-ee, pdi-yarn-plugin, data-exploration, big-data-plugin-features]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-data-mining
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Djavadoc
+
+  worker-nodes-ee-plugin:
+    runs-on: self-hosted
+    needs: [platform-chart-plugin-ee, analysis-plugin-ee, pdi-yarn-plugin, data-exploration, big-data-plugin-features]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/worker-nodes-ee-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  pdi-weka-plugins-ee:
+    runs-on: self-hosted
+    needs: [data-exploration-ee, karaf-assembly, dashboards-plugin, pdi-weka-plugins, worker-nodes-ee-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-data-mining-ee
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Djavadoc
+
+  pir-plugin:
+    runs-on: self-hosted
+    needs: [data-exploration-ee, karaf-assembly, dashboards-plugin, pdi-weka-plugins, worker-nodes-ee-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-platform-plugin-interactive-reporting
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Deula-wrap
+
+  pdi-scheduler-plugin:
+    runs-on: self-hosted
+    needs: [data-exploration-ee, karaf-assembly, dashboards-plugin, pdi-weka-plugins, worker-nodes-ee-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pdi-scheduler-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  pdi-google-docs-plugin:
+    runs-on: self-hosted
+    needs: [data-exploration-ee, karaf-assembly, dashboards-plugin, pdi-weka-plugins, worker-nodes-ee-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pdi-google-docs-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  pdi-jms-plugin:
+    runs-on: self-hosted
+    needs: [data-exploration-ee, karaf-assembly, dashboards-plugin, pdi-weka-plugins, worker-nodes-ee-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pdi-jms-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  pdi-sdk-plugins:
+    runs-on: self-hosted
+    needs: [data-exploration-ee, karaf-assembly, dashboards-plugin, pdi-weka-plugins, worker-nodes-ee-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pdi-sdk-plugins
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Deula-wrap
+
+  pdi-r-plugin:
+    runs-on: self-hosted
+    needs: [data-exploration-ee, karaf-assembly, dashboards-plugin, pdi-weka-plugins, worker-nodes-ee-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-r-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  pdi-sap-hana-bulk-loader-plugin:
+    runs-on: self-hosted
+    needs: [data-exploration-ee, karaf-assembly, dashboards-plugin, pdi-weka-plugins, worker-nodes-ee-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pdi-sap-hana-bulk-loader-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Deula-wrap
+
+  big-data-plugin-assembly:
+    runs-on: self-hosted
+    needs: [data-exploration-ee, karaf-assembly, dashboards-plugin, pdi-weka-plugins, worker-nodes-ee-plugin]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/big-data-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          path: assemblies
+          args: clean install -DskipDefault -DassemblyOnly
+
+  karaf-assembly-ee:
+    runs-on: self-hosted
+    needs: [pdi-weka-plugins-ee, pir-plugin, pdi-scheduler-plugin, pdi-google-docs-plugin, pdi-jms-plugin, pdi-sdk-plugins, pdi-r-plugin, pdi-sap-hana-bulk-loader-plugin, big-data-plugin-assembly]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-karaf-ee-assembly
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  big-data-plugin-assembly-ee:
+    runs-on: self-hosted
+    needs: [karaf-assembly-ee]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-big-data-ee
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -DskipDefault -P assemblies
+
+  prd-assembly:
+    runs-on: self-hosted
+    needs: [karaf-assembly-ee]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-reporting
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Pdesigner -Djavadoc -Dmaven.test.failure.ignore=true
+
+  prd-assembly-ee:
+    runs-on: self-hosted
+    needs: [big-data-plugin-assembly-ee, prd-assembly]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-reportdesigner-ee
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Deula-wrap
+
+  pdi-pur-plugin-ee:
+    runs-on: self-hosted
+    needs: [big-data-plugin-assembly-ee, prd-assembly]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pdi-ee-plugin
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  pdi-operations-mart-ee:
+    runs-on: self-hosted
+    needs: [prd-assembly-ee, pdi-pur-plugin-ee]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pdi-operations-mart
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Deula-wrap
+
+  pdi-client-assembly:
+    runs-on: self-hosted
+    needs: [pdi-operations-mart-ee]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-kettle
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -DskipDefault -P assemblies
+
+  pdi-client-assembly-ee:
+    runs-on: self-hosted
+    needs: [pdi-client-assembly]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pdi-assemblies-ee
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Deula-wrap
+
+  metadata-editor:
+    runs-on: self-hosted
+    needs: [pdi-client-assembly-ee]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-metadata-editor
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  platform-server-assembly:
+    runs-on: self-hosted
+    needs: [pdi-client-assembly-ee]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-platform
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -DskipDefault -P platform-assemble
+
+  pad:
+    runs-on: self-hosted
+    needs: [pdi-client-assembly-ee]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-aggdesigner
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install
+
+  foundry-workers-ee:
+    runs-on: self-hosted
+    needs: [metadata-editor, platform-server-assembly, pad]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/worker-nodes-ee
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Deula-wrap -DscmBranch=${DEFAULT_BRANCH}
+
+  platform-server-assembly-ee:
+    runs-on: self-hosted
+    needs: [metadata-editor, platform-server-assembly, pad]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-platform-ee
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -DskipDefault -P platform-ee-assemble -Deula-wrap
+
+  metadata-editor-ee:
+    runs-on: self-hosted
+    needs: [metadata-editor, platform-server-assembly, pad]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-metadata-editor-ee
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Deula-wrap
+
+  pad-assembly-ee:
+    runs-on: self-hosted
+    needs: [metadata-editor, platform-server-assembly, pad]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-aggdesigner-ee
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Deula-wrap
+
+  platform-sdk:
+    runs-on: self-hosted
+    needs: [metadata-editor, platform-server-assembly, pad]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          repository: pentaho/pentaho-sdk
+          ref: master
+          token: ${{ secrets.SCM_TOKEN }}
+          path: pipelines/project
+      - name: Build
+        uses: hbfernandes/actions/mvn@master
+        with:
+          args: clean install -Deula-wrap
+
+  # installers:
+  #   runs-on: self-hosted
+  #   needs: [foundry-workers-ee, platform-server-assembly-ee, metadata-editor-ee, pad-assembly-ee, platform-sdk]
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v1
+  #       with:
+  #         repository: pentaho/pentaho-installer
+  #         ref: master
+  #         token: ${{ secrets.SCM_TOKEN }}
+  #         path: pipelines/project
+  #     - name: Build
+  #       uses: hbfernandes/actions/mvn@master
+  #       with:
+  #         args: clean install
+
+  # patch-installers:
+  #   runs-on: self-hosted
+  #   needs: [installers]
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v1
+  #       with:
+  #         repository: pentaho/pentaho-installer-v2
+  #         ref: master
+  #         token: ${{ secrets.SCM_TOKEN }}
+  #         path: pipelines/project
+  #     - name: Build
+  #       uses: hbfernandes/actions/mvn@master
+  #       with:
+  #         args: clean install
+
